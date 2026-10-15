@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>asciicam</title>
+<meta name="description" content="Your webcam, live, as text.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000;
+    --ink: #e8e8e8;
+    --bar: rgba(20, 20, 20, .82);
+    --line: rgba(255, 255, 255, .14);
+    --on: #fff;
+    --on-ink: #000;
+  }
+  body.paper {
+    --bg: #fff;
+    --ink: #1a1a1a;
+    --bar: rgba(255, 255, 255, .88);
+    --line: rgba(0, 0, 0, .16);
+    --on: #000;
+    --on-ink: #fff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 15px/1.4 "IBM Plex Sans", system-ui, sans-serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #start {
+    position: fixed; inset: 0;
+    display: grid; place-content: center; justify-items: center; gap: 20px;
+    padding: 16px; text-align: center;
+  }
+  #start h1 {
+    margin: 0;
+    font: 500 clamp(40px, 9vw, 96px)/1 "IBM Plex Mono", monospace;
+    letter-spacing: -.02em;
+  }
+  #start p { margin: 0; max-width: 34ch; opacity: .7; }
+
+  button, label { font: inherit; color: inherit; }
+  button {
+    border: 1px solid var(--line); background: transparent;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--on); outline-offset: 2px; }
+  .primary { background: var(--on); color: var(--on-ink); border-color: var(--on); font-weight: 600; padding: 12px 22px; }
+
+  #bar {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 18px;
+    padding: 8px; border-radius: 999px;
+    background: var(--bar); border: 1px solid var(--line);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    width: max-content; max-width: calc(100% - 32px);
+  }
+  #modes { display: flex; gap: 4px; }
+  #modes button { border-color: transparent; }
+  #modes button[aria-pressed="true"] { background: var(--on); color: var(--on-ink); }
+  #bar label { display: flex; align-items: center; gap: 10px; padding: 0 4px; }
+  input[type="range"] { width: 120px; accent-color: var(--on); }
+  @media (max-width: 560px) {
+    #bar { border-radius: 22px; bottom: 16px; }
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="out"></canvas>
+
+<div id="start">
+  <h1>asciicam</h1>
+  <p id="msg">Your webcam, live, as text. Nothing leaves your device.</p>
+  <button class="primary" id="go">Turn on camera</button>
+</div>
+
+<div id="bar" hidden>
+  <div id="modes" role="group" aria-label="Look">
+    <button data-mode="green" aria-pressed="true">Green</button>
+    <button data-mode="colour" aria-pressed="false">Colour</button>
+    <button data-mode="paper" aria-pressed="false">Paper</button>
+  </div>
+  <label>Detail <input id="detail" type="range" min="40" max="220" step="2"></label>
+  <button id="save">Save photo</button>
+</div>
+
+<script>
+const RAMP = " .:-=+*#%@";
+const FONT = '"IBM Plex Mono", monospace';
+const video = document.createElement("video");
+video.muted = true;
+video.playsInline = true;
+const out = document.getElementById("out");
+const ctx = out.getContext("2d", { alpha: false });
+const small = document.createElement("canvas");
+const sctx = small.getContext("2d", { willReadFrequently: true });
+const detail = document.getElementById("detail");
+let mode = "green";
+
+detail.value = innerWidth < 600 ? 70 : 120;
+
+document.getElementById("go").onclick = async () => {
+  const msg = document.getElementById("msg");
+  try {
+    video.srcObject = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    await video.play();
+    await document.fonts.load(`20px ${FONT}`).catch(() => {});
+  } catch (e) {
+    msg.textContent = e.name === "NotAllowedError"
+      ? "Camera access is blocked. Allow it in your browser's site settings, then try again."
+      : e.name === "NotFoundError"
+        ? "No camera found. Plug one in, then try again."
+        : `The camera didn't start (${e.name}). Close other apps using it, then try again.`;
+    return;
+  }
+  document.getElementById("start").hidden = true;
+  document.getElementById("bar").hidden = false;
+  requestAnimationFrame(draw);
+};
+
+document.getElementById("modes").onclick = (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  mode = b.dataset.mode;
+  for (const x of document.querySelectorAll("#modes button")) x.setAttribute("aria-pressed", x === b);
+  document.body.classList.toggle("paper", mode === "paper");
+};
+
+document.getElementById("save").onclick = () => {
+  out.toBlob((blob) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `asciicam-${Date.now()}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+};
+
+function draw() {
+  requestAnimationFrame(draw);
+  if (video.readyState < 2) return;
+
+  const dpr = devicePixelRatio || 1;
+  const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+  if (out.width !== W || out.height !== H) { out.width = W; out.height = H; }
+
+  const cols = +detail.value;
+  const cw = W / cols, size = cw / 0.6;
+  const rows = Math.ceil(H / size);
+  small.width = cols;
+  small.height = rows;
+
+  const vw = video.videoWidth, vh = video.videoHeight, a = W / (rows * size);
+  let sw = vw, sh = vh;
+  if (vw / vh > a) sw = vh * a; else sh = vw / a;
+  sctx.setTransform(-1, 0, 0, 1, cols, 0);
+  sctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, cols, rows);
+  const px = sctx.getImageData(0, 0, cols, rows).data;
+
+  const n = cols * rows;
+  const lum = new Uint8Array(n);
+  const cdf = new Float32Array(256);
+  for (let i = 0; i < n; i++) {
+    lum[i] = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+    cdf[lum[i]]++;
+  }
+  for (let v = 1; v < 256; v++) cdf[v] += cdf[v - 1];
+  for (let v = 0; v < 256; v++) cdf[v] /= n;
+
+  const paper = mode === "paper";
+  ctx.fillStyle = paper ? "#fff" : "#000";
+  ctx.fillRect(0, 0, W, H);
+  ctx.font = `${size}px ${FONT}`;
+  ctx.textBaseline = "top";
+  if (mode === "green") ctx.fillStyle = "#4dff7c";
+  if (paper) ctx.fillStyle = "#000";
+
+  const last = RAMP.length - 1;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x;
+      let t = cdf[lum[i]];
+      if (paper) t = 1 - t;
+      const ch = RAMP[Math.round(t * last)];
+      if (ch === " ") continue;
+      if (mode !== "colour") ctx.globalAlpha = 0.3 + 0.7 * t;
+      if (mode === "colour") ctx.fillStyle = `rgb(${px[i * 4]},${px[i * 4 + 1]},${px[i * 4 + 2]})`;
+      ctx.fillText(ch, x * cw, y * size);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+</script>
+</body>
+</html>

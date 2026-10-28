@@ -1,7 +1,7 @@
 # asciicam
 
-Your webcam, live, as text. Runs in the browser, nothing gets uploaded.
+Shows your webcam as ASCII text in the browser.
 
-![asciicam](screenshot.png)
+Live at https://salw2e.github.io/asciicam/ or open `index.html`.
 
-Open `index.html` or host it anywhere. Three looks (green, colour, paper), a detail slider, and Save photo.
+![screenshot](screenshot.png)
